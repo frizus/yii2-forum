@@ -5,6 +5,7 @@ $db = require __DIR__ . '/db.php';
 
 $config = [
     'id' => 'basic',
+    'name' => 'Форум',
     'basePath' => dirname(__DIR__),
     'bootstrap' => ['log'],
     'aliases' => [
@@ -43,15 +44,18 @@ $config = [
             ],
         ],
         'db' => $db,
-        /*
+
         'urlManager' => [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
             'rules' => [
+                'site/topic/<id:\d+>' => 'site/topic',
+                'site/delete-topic/<id:\d+>' => 'site/delete-topic',
+                'site/delete-post/<id:\d+>' => 'site/delete-post',
             ],
         ],
-        */
     ],
+    'language' => 'ru-RU',
     'params' => $params,
 ];
 

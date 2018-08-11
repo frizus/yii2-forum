@@ -1,15 +1,23 @@
 <?php
-
 namespace app\controllers;
 
+use app\models\Posts;
+use app\models\Topics;
+use app\models\TopicForm;
+use app\models\PostForm;
 use Yii;
-use yii\filters\AccessControl;
+use yii\base\InvalidArgumentException;
+use yii\data\ActiveDataProvider;
+use yii\web\BadRequestHttpException;
 use yii\web\Controller;
-use yii\web\Response;
 use yii\filters\VerbFilter;
+use yii\filters\AccessControl;
 use app\models\LoginForm;
-use app\models\ContactForm;
+use app\models\SignupForm;
 
+/**
+ * Site controller
+ */
 class SiteController extends Controller
 {
     /**
@@ -20,10 +28,15 @@ class SiteController extends Controller
         return [
             'access' => [
                 'class' => AccessControl::className(),
-                'only' => ['logout'],
+                'only' => ['logout', 'signup', 'signup-confirm', 'create-topic', 'delete-topic', 'create-post', 'delete-post'],
                 'rules' => [
                     [
-                        'actions' => ['logout'],
+                        'actions' => ['signup', 'signup-confirm'],
+                        'allow' => true,
+                        'roles' => ['?'],
+                    ],
+                    [
+                        'actions' => ['logout', 'create-topic', 'delete-topic', 'create-post', 'delete-post'],
                         'allow' => true,
                         'roles' => ['@'],
                     ],
@@ -57,17 +70,134 @@ class SiteController extends Controller
     /**
      * Displays homepage.
      *
-     * @return string
+     * @return mixed
      */
     public function actionIndex()
     {
-        return $this->render('index');
+        $dataProvider = new ActiveDataProvider([
+            'query' => Topics::find(),
+            'sort' => false,
+        ]);
+
+        return $this->render('index', ['dataProvider' => $dataProvider]);
     }
 
     /**
-     * Login action.
+     * @param $id
+     * @return string
+     */
+    public function actionTopic($id)
+    {
+        $topic = Topics::findOne(['id' => $id]);
+        $posts = Posts::find()->where(['topic_id' => $id])->orderBy(['created_at' => SORT_ASC])->with(['topic', 'author'])->all();
+        if (!\Yii::$app->user->isGuest)
+        {
+            $postForm = new PostForm();
+            $postForm->topic_id = $topic->id;
+        }
+        else
+        {
+            $postForm = null;
+        }
+
+        return $this->render('view', ['topic' => $topic, 'posts' => $posts, 'postForm' => $postForm]);
+    }
+
+    public function actionCreateTopic()
+    {
+        $model = new TopicForm();
+
+        if ($model->load(Yii::$app->request->post()))
+        {
+            if ($topic = $model->createTopic())
+            {
+                \Yii::$app->session->setFlash('success', 'Тема "' . \Yii::$app->formatter->asText($topic->name) . '" создана.');
+                return $this->redirect('/site/topic/' . $topic->id);
+            }
+            else
+            {
+                \Yii::$app->session->setFlash('error', 'Ошибка при создании темы.');
+            }
+        }
+
+        return $this->render('create-topic', ['model' => $model]);
+    }
+
+    public function actionDeleteTopic($id)
+    {
+        $topic = Topics::findOne(['id' => $id]);
+
+        if (!$topic)
+        {
+            return $this->goHome();
+        }
+
+        if ($topic->isTopicOwner())
+        {
+            if ($topic->delete())
+            {
+                \Yii::$app->session->setFlash('success', 'Тема "' . \Yii::$app->formatter->asText($topic->name) . '" удалена.');
+                return $this->goHome();
+            }
+            else
+            {
+                \Yii::$app->session->setFlash('error', 'Не удалось удалить тему.');
+            }
+        }
+
+        return $this->redirect('/site/topic/' . $topic->id);
+    }
+
+    public function actionCreatePost()
+    {
+        $model = new PostForm();
+
+        if ($model->load(Yii::$app->request->post()))
+        {
+            if ($post = $model->createPost())
+            {
+                \Yii::$app->session->setFlash('success', 'Сообщение добавлено.');
+                return $this->redirect('/site/topic/' . $model->topic_id . '#post-' . $post->id);
+            }
+            else
+            {
+                \Yii::$app->session->setFlash('error', 'Сообщение не удалось создать.');
+                return $model->validate(['topic_id']) ? $this->redirect('/site/topic/' . $model->topic_id) : $this->goHome();
+            }
+        }
+
+        return $this->goHome();
+    }
+
+    public function actionDeletePost($id)
+    {
+        $post = Posts::findOne(['id' => $id]);
+
+        if (!$post)
+        {
+            return $this->goHome();
+        }
+
+        if ($post->isPostOwner() && !$post->isFirstPost())
+        {
+            if ($post->delete())
+            {
+                \Yii::$app->session->setFlash('success', 'Сообщение удалено.');
+                return $this->redirect('/site/topic/' . $post->topic_id);
+            }
+            else
+            {
+                \Yii::$app->session->setFlash('error', 'Не удалось удалить сообщение');
+            }
+        }
+
+        return $this->redirect('/site/topic/' . $post->topic_id . '#post-' . $post->id);
+    }
+
+    /**
+     * Logs in a user.
      *
-     * @return Response|string
+     * @return mixed
      */
     public function actionLogin()
     {
@@ -78,18 +208,19 @@ class SiteController extends Controller
         $model = new LoginForm();
         if ($model->load(Yii::$app->request->post()) && $model->login()) {
             return $this->goBack();
-        }
+        } else {
+            $model->password = '';
 
-        $model->password = '';
-        return $this->render('login', [
-            'model' => $model,
-        ]);
+            return $this->render('login', [
+                'model' => $model,
+            ]);
+        }
     }
 
     /**
-     * Logout action.
+     * Logs out the current user.
      *
-     * @return Response
+     * @return mixed
      */
     public function actionLogout()
     {
@@ -99,30 +230,46 @@ class SiteController extends Controller
     }
 
     /**
-     * Displays contact page.
+     * Signs user up.
      *
-     * @return Response|string
+     * @return mixed
      */
-    public function actionContact()
+    public function actionSignup()
     {
-        $model = new ContactForm();
-        if ($model->load(Yii::$app->request->post()) && $model->contact(Yii::$app->params['adminEmail'])) {
-            Yii::$app->session->setFlash('contactFormSubmitted');
-
-            return $this->refresh();
+        $model = new SignupForm();
+        if ($model->load(Yii::$app->request->post()))
+        {
+            if ($user = $model->signup())
+            {
+                if ($model->sentEmailConfirm($user))
+                {
+                    \Yii::$app->session->setFlash('success', 'На почту выслано письмо с подтверждением');
+                    return $this->goHome();
+                }
+            }
         }
-        return $this->render('contact', [
+
+        return $this->render('signup', [
             'model' => $model,
         ]);
     }
 
     /**
-     * Displays about page.
-     *
-     * @return string
+     * @param $token
+     * @return \yii\web\Response
      */
-    public function actionAbout()
+    public function actionSignupConfirm($token)
     {
-        return $this->render('about');
+        $model = new SignupForm();
+
+        try {
+            $model->confirmation($token);
+            Yii::$app->session->setFlash('success', 'Регистрация подтверждена.');
+        } catch (\Exception $e){
+            Yii::$app->errorHandler->logException($e);
+            Yii::$app->session->setFlash('error', $e->getMessage());
+        }
+
+        return $this->goHome();
     }
 }
