@@ -10,12 +10,12 @@
 Требования
 ------------
 
-Apache 2.4, PHP >= 5.4, MySQL >= 5.5, Composer.
+Apache 2.4, PHP >= 5.4, MySQL >= 5.5, Composer
 
 Установка
 ------------
 
-Создать базу данных <b>forum</b> в MySQL с логином <b>forum</b> и паролем <b>forum</b>.
+Создать базу данных <b>forum</b> в MySQL с логином <b>forum</b> и паролем <b>forum</b>
 
 Выполнить консольные команды в директории проекта:
 
@@ -24,4 +24,4 @@ composer install
 ./yii migrate/up
 ~~~
 
-Настроить virtual host для проекта в apache, указывающий на директорию web.
+Настроить virtual host для проекта в apache, указывающий на директорию web
